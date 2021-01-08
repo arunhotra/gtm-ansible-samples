@@ -1,0 +1,111 @@
+---
+- name: Create GTM WIP with 2 pools
+  hosts: all
+  connection: local
+  gather_facts: no
+
+  vars_prompt:
+    - name: ansible_user
+      prompt: "What is your username?"
+      private: no
+
+    - name: ansible_ssh_pass
+      prompt: "What is your password?"
+      private: yes
+
+  tasks:
+    - name: Set a fact named 'provider' with BIG-IP login information
+      set_fact:
+        provider:
+          server: "{{ansible_host}}"
+          user: "{{ansible_user}}"
+          password: "{{ansible_ssh_pass}}"
+          server_port: 443
+          validate_certs: no
+
+    - name: Create data center New York
+      bigip_gtm_datacenter:
+        provider: "{{provider}}"
+        name: NewYork
+        location: 600 Lexington Ave
+
+    - name: Create data center Seattle
+      bigip_gtm_datacenter:
+        provider: "{{provider}}"
+        name: Seattle
+        location: F5 Tower
+
+
+    - name: Create server "GTM_Server1"
+      bigip_gtm_server:
+        name: GTM_Server1
+        datacenter: /Common/NewYork
+        server_type: generic-host
+        link_discovery: disabled
+        virtual_server_discovery: disabled
+        devices:
+          - name: server_1
+            address: 1.1.1.1
+        provider: "{{provider}}"
+
+    - name: Add Virtual Server to the corresponding server
+      bigip_gtm_virtual_server:
+        server_name: GTM_Server1
+        address: 1.1.1.1
+        name: vs1
+        provider: "{{provider}}"
+
+    - name: Create server "GTM_Server2"
+      bigip_gtm_server:
+        name: GTM_Server2
+        datacenter: /Common/Seattle
+        server_type: generic-host
+        link_discovery: disabled
+        virtual_server_discovery: disabled
+        devices:
+          - name: server_2
+            address: 2.2.2.2
+        provider: "{{provider}}"
+
+    - name: Add Virtual Server to the corresponding server
+      bigip_gtm_virtual_server:
+        server_name: GTM_Server2
+        address: 2.2.2.2
+        name: vs2
+        provider: "{{provider}}"
+
+
+    - name: Create the GTM pool
+      bigip_gtm_pool:
+        name: app1_pool
+        type: a
+        provider: "{{provider}}"
+
+    - name: Add Virtual Servers to the GTM Pool
+      bigip_gtm_pool_member:
+        pool: app1_pool
+        type: a
+        provider: "{{provider}}"
+        aggregate:
+          - server_name: GTM_Server1
+            virtual_server: vs1
+            partition: Common
+            description: NYC
+            member_order: 0
+          - server_name: GTM_Server2
+            virtual_server: vs2
+            partition: Common
+            description: Sea
+            member_order: 1
+
+
+    - name: Create the Wide IP
+      bigip_gtm_wide_ip:
+        pool_lb_method: round-robin
+        name: app1.example.com
+        type: a
+        pools:
+          - name: app1_pool
+            ratio: 100
+            order: 1
+        provider: "{{provider}}"
